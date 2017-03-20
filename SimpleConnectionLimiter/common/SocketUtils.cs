@@ -18,9 +18,8 @@ namespace SimpleConnectionLimiter.common
                 return;
             }
 
-            readBuffer.RequireWrite(readBuffer.Available, false, false, out byte[] buffer,
-                out int offset, out int availableCount);
-            socket.BeginReceive(buffer, offset, availableCount, 0, SocketReadCallback,
+            readBuffer.RequireWrite(readBuffer.Available, false, false, out ArraySegment<byte> buffer);
+            socket.BeginReceive(buffer.Array, buffer.Offset, buffer.Count, 0, SocketReadCallback,
                 new object[] { socket, readBuffer, minDataCount, callback });
         }
 
@@ -56,8 +55,8 @@ namespace SimpleConnectionLimiter.common
 
         public static void Send(this Socket socket, PassiveBuffer sendBuffer, int count, Action<bool, Exception> callback)
         {
-            sendBuffer.RequireRead(count, out byte[] buffer, out int offset, out int availableCount);
-            socket.BeginSend(buffer, offset, availableCount, 0, SocketSendCallback, new object[] { socket, sendBuffer, count, callback });
+            sendBuffer.RequireRead(count, out ArraySegment<byte> buffer);
+            socket.BeginSend(buffer.Array, buffer.Offset, buffer.Count, 0, SocketSendCallback, new object[] { socket, sendBuffer, count, callback });
         }
 
         private static void SocketSendCallback(IAsyncResult ar)

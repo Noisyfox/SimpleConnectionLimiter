@@ -40,8 +40,7 @@ namespace SimpleConnectionLimiter.common
             _tail = 0;
         }
 
-        public void RequireRead(int readCount, out byte[] rawArray, out int offset,
-            out int availableCount)
+        public void RequireRead(int readCount, out ArraySegment<byte> rawBuffer )
         {
             if (readCount < 0)
             {
@@ -52,9 +51,7 @@ namespace SimpleConnectionLimiter.common
                 throw new ArgumentOutOfRangeException(nameof(readCount));
             }
 
-            rawArray = _rawArray;
-            offset = _head;
-            availableCount = readCount;
+            rawBuffer = new ArraySegment<byte>(_rawArray, _head, readCount);
         }
 
         public void ConfirmRead(int readCount)
@@ -76,8 +73,7 @@ namespace SimpleConnectionLimiter.common
             }
         }
 
-        public void RequireWrite(int writeCount, bool ensureSize, bool forceTrim, out byte[] rawArray, out int offset,
-            out int availableCount)
+        public void RequireWrite(int writeCount, bool ensureSize, bool forceTrim, out ArraySegment<byte> rawBuffer)
         {
             if (writeCount < 0)
             {
@@ -97,10 +93,8 @@ namespace SimpleConnectionLimiter.common
                 _head = 0;
                 tailAvailable = _rawArray.Length - _tail;
             }
-
-            rawArray = _rawArray;
-            offset = _tail;
-            availableCount = Math.Min(tailAvailable, writeCount);
+            
+            rawBuffer = new ArraySegment<byte>(_rawArray, _tail, Math.Min(tailAvailable, writeCount));
         }
 
         public void ConfirmWrite(int writeCount)

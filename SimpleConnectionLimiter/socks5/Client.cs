@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -57,18 +58,18 @@ namespace SimpleConnectionLimiter.socks5
         private void ConnectionReject(bool notSocks5)
         {
             _clientToBuffer.Clear();
-            _clientToBuffer.RequireWrite(2, true, false, out byte[] buffer,
-                out int offset, out int availableCount);
+            _clientToBuffer.RequireWrite(2, true, false, out ArraySegment<byte> _buffer);
+            var buffer = (IList<byte>) _buffer;
             if (notSocks5)
             {
                 // Reject socks 4
-                buffer[offset++] = 0x0;
-                buffer[offset] = 0x91;
+                buffer[0] = 0x0;
+                buffer[1] = 0x91;
             }
             else
             {
-                buffer[offset++] = 0x5;
-                buffer[offset] = 0xFF; // NO ACCEPTABLE METHODS
+                buffer[0] = 0x5;
+                buffer[1] = 0xFF; // NO ACCEPTABLE METHODS
             }
             _clientToBuffer.ConfirmWrite(2);
 
@@ -92,17 +93,17 @@ namespace SimpleConnectionLimiter.socks5
         {
             {
                 // Parse client methods
-                _clientFromBuffer.RequireRead(_clientFromBuffer.Size, out byte[] buffer, out int offset,
-                    out int availableCount);
-                if (buffer[offset] != 0x5)
+                _clientFromBuffer.RequireRead(_clientFromBuffer.Size, out ArraySegment<byte> _buffer);
+                var buffer = (IList<byte>) _buffer;
+                if (buffer[0] != 0x5)
                 {
                     ConnectionReject(true);
                     return;
                 }
 
-                int nMethods = buffer[offset + 1];
+                int nMethods = buffer[1];
                 var authMethodLen = nMethods + 2;
-                if (authMethodLen < availableCount)
+                if (authMethodLen < buffer.Count)
                 {
                     ReadAtLeast(authMethodLen, AuthMethodRecvCallback);
                     return;
@@ -110,7 +111,7 @@ namespace SimpleConnectionLimiter.socks5
 
                 var hasNoAuthRequired = false;
                 var j = 0;
-                for (var i = offset + 2; j < nMethods; i++, j++)
+                for (var i = 2; j < nMethods; i++, j++)
                 {
                     if (buffer[i] == 0x0)
                     {
@@ -131,10 +132,10 @@ namespace SimpleConnectionLimiter.socks5
             {
                 // Select method
                 _clientToBuffer.Clear();
-                _clientToBuffer.RequireWrite(2, true, false, out byte[] buffer,
-                    out int offset, out int availableCount);
-                buffer[offset++] = 0x5;
-                buffer[offset] = 0x0;
+                _clientToBuffer.RequireWrite(2, true, false, out ArraySegment<byte> _buffer);
+                var buffer = (IList<byte>)_buffer;
+                buffer[0] = 0x5;
+                buffer[1] = 0x0;
                 _clientToBuffer.ConfirmWrite(2);
 
                 Send(_clientToBuffer.Size, AuthMethodSendCallback);
@@ -159,9 +160,11 @@ namespace SimpleConnectionLimiter.socks5
 
         private void RequestHeadReadCallback()
         {
-            _clientFromBuffer.RequireRead(3 + 2, out byte[] buffer, out int offset, out int availableCount);
+            _clientFromBuffer.RequireRead(3 + 2, out ArraySegment<byte> _buffer);
+            var buffer = (IList<byte>)_buffer;
 
-            int atyp = buffer[offset + 3];
+
+            int atyp = buffer[3];
 
             switch (atyp)
             {
@@ -169,7 +172,7 @@ namespace SimpleConnectionLimiter.socks5
                     ReadAtLeast(3 + 1 + 4 + 2, OnRequestFullyReadCallback);
                     break;
                 case 3: // domain name, length + str
-                    int len = buffer[offset + 4];
+                    int len = buffer[4];
                     ReadAtLeast(3 + 1 + 1 + len + 2, OnRequestFullyReadCallback);
                     break;
                 case 4: // IPv6 address, 16 bytes
@@ -184,10 +187,11 @@ namespace SimpleConnectionLimiter.socks5
 
         private void OnRequestFullyReadCallback()
         {
-            _clientFromBuffer.RequireRead(_clientFromBuffer.Size, out byte[] buffer, out int offset, out int availableCount);
+            _clientFromBuffer.RequireRead(_clientFromBuffer.Size, out ArraySegment<byte> _buffer);
+            var buffer = (IList<byte>)_buffer;
 
-            int cmd = buffer[offset + 1];
-            int atyp = buffer[offset + 3];
+            int cmd = buffer[1];
+            int atyp = buffer[3];
             string dstAddr;
             int dstPort;
             int headerLen;
@@ -195,20 +199,20 @@ namespace SimpleConnectionLimiter.socks5
             switch (atyp)
             {
                 case 1: // IPv4 address, 4 bytes
-                    dstAddr = new IPAddress(buffer.Skip(offset + 4).Take(4).ToArray()).ToString();
-                    dstPort = (buffer[offset + 4 + 4] << 8) + buffer[offset + 4 + 4 + 1];
+                    dstAddr = new IPAddress(buffer.Skip(4).Take(4).ToArray()).ToString();
+                    dstPort = (buffer[4 + 4] << 8) + buffer[4 + 4 + 1];
                     headerLen = 4 + 4 + 2;
                     break;
                 case 3: // domain name, length + str
-                    int len = buffer[offset + 4];
-                    dstAddr = Encoding.UTF8.GetString(buffer, offset + 4 + 1, len);
-                    dstPort = (buffer[offset + 4 + 1 + len] << 8) + buffer[offset + 4 + 1 + len + 1];
+                    int len = buffer[4];
+                    dstAddr = Encoding.UTF8.GetString(_buffer.Array, _buffer.Offset + 4 + 1, len);
+                    dstPort = (buffer[4 + 1 + len] << 8) + buffer[4 + 1 + len + 1];
                     headerLen = 4 + 1 + len + 2;
 
                     break;
                 case 4: // IPv6 address, 16 bytes
-                    dstAddr = $"[{new IPAddress(buffer.Skip(offset + 4).Take(16).ToArray())}]";
-                    dstPort = (buffer[offset + 4 + 16] << 8) + buffer[offset + 4 + 16 + 1];
+                    dstAddr = $"[{new IPAddress(buffer.Skip(4).Take(16).ToArray())}]";
+                    dstPort = (buffer[4 + 16] << 8) + buffer[4 + 16 + 1];
                     headerLen = 4 + 16 + 2;
 
                     break;
@@ -242,17 +246,18 @@ namespace SimpleConnectionLimiter.socks5
 
         private void Reply(byte result, Action callback)
         {
-            _clientToBuffer.RequireWrite(10, true, false, out byte[] buffer, out int offset, out int availableCount);
-            buffer[offset++] = 0x5;
-            buffer[offset++] = result;
-            buffer[offset++] = 0x0;
-            buffer[offset++] = 0x1;
-            buffer[offset++] = 0x0;
-            buffer[offset++] = 0x0;
-            buffer[offset++] = 0x0;
-            buffer[offset++] = 0x0;
-            buffer[offset++] = 0x0;
-            buffer[offset++] = 0x0;
+            _clientToBuffer.RequireWrite(10, true, false, out ArraySegment<byte> _buffer);
+            var buffer = (IList<byte>)_buffer;
+            buffer[0] = 0x5;
+            buffer[1] = result;
+            buffer[2] = 0x0;
+            buffer[3] = 0x1;
+            buffer[4] = 0x0;
+            buffer[5] = 0x0;
+            buffer[6] = 0x0;
+            buffer[7] = 0x0;
+            buffer[8] = 0x0;
+            buffer[9] = 0x0;
             _clientToBuffer.ConfirmWrite(10);
 
             Send(_clientToBuffer.Size, callback);
