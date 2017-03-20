@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using SimpleConnectionLimiter.socks5;
 
 namespace SimpleConnectionLimiter
 {
@@ -18,6 +19,9 @@ namespace SimpleConnectionLimiter
             Application.SetCompatibleTextRenderingDefault(false);
 
             // Init notify menu
+
+            // Test listener
+            new Listener(5555) {MaxConnections = 1/* for better debugging */}.Start();
 
             Application.Run();
         }
