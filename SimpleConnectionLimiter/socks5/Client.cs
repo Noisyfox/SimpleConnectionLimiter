@@ -262,76 +262,34 @@ namespace SimpleConnectionLimiter.socks5
 
         private void ReadAtLeast(int minDataCount, Action callback)
         {
-            if (_clientFromBuffer.Size >= minDataCount)
+            _socket.ReadAtLeast(_clientFromBuffer, minDataCount, (success, exception) =>
             {
-                callback();
-                return;
-            }
-
-            _clientFromBuffer.RequireWrite(_clientFromBuffer.Available, false, false, out byte[] buffer,
-                out int offset, out int availableCount);
-            _socket.BeginReceive(buffer, offset, availableCount, 0, ClientReadCallback,
-                new object[] {minDataCount, callback});
-        }
-
-        private void ClientReadCallback(IAsyncResult ar)
-        {
-            try
-            {
-                var bytesRead = _socket.EndReceive(ar);
-                _clientFromBuffer.ConfirmWrite(bytesRead);
-
-                if (bytesRead == 0)
+                if (!success)
                 {
+                    // TODO: log
                     CallOnExitAndStop();
-                    return;
-                }
-
-                var param = (object[]) ar.AsyncState;
-                var minDataCount = (int)param[0];
-                var callback = (Action) param[1];
-
-                ReadAtLeast(minDataCount, callback);
-            }
-            catch (Exception)
-            {
-                // TODO: log
-                CallOnExitAndStop();
-            }
-        }
-
-        private void Send(int count, Action callback)
-        {
-            _clientToBuffer.RequireRead(count, out byte[] buffer, out int offset, out int availableCount);
-            _socket.BeginSend(buffer, offset, availableCount, 0, ClientSendCallback, new object[] {count, callback});
-        }
-
-        private void ClientSendCallback(IAsyncResult ar)
-        {
-            try
-            {
-                var byteSend = _socket.EndSend(ar);
-                _clientToBuffer.ConfirmRead(byteSend);
-
-                var param = (object[])ar.AsyncState;
-                var count = (int)param[0];
-                var callback = (Action)param[1];
-
-                var remainCount = count - byteSend;
-                if (remainCount > 0)
-                {
-                    Send(remainCount, callback);
                 }
                 else
                 {
                     callback();
                 }
-            }
-            catch (Exception)
+            });
+        }
+
+        private void Send(int count, Action callback)
+        {
+            _socket.Send(_clientToBuffer, count, (success, exception) =>
             {
-                // TODO: log
-                CallOnExitAndStop();
-            }
+                if (!success)
+                {
+                    // TODO: log
+                    CallOnExitAndStop();
+                }
+                else
+                {
+                    callback();
+                }
+            });
         }
         #endregion
     }
