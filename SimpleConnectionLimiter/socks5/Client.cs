@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using SimpleConnectionLimiter.common;
 
@@ -19,6 +20,7 @@ namespace SimpleConnectionLimiter.socks5
 
         public ListenerContext Context { get; }
 
+        private int _isStopped = 0;
         public event ClientExitDelegate OnClientExit;
 
         private readonly Socket _socket;
@@ -39,6 +41,12 @@ namespace SimpleConnectionLimiter.socks5
 
         public void Stop()
         {
+            if (Interlocked.Exchange(ref _isStopped, 1) != 0)
+            {
+                return;
+            }
+
+            OnClientExit?.Invoke(this);
             try
             {
                 _socket.Close();
@@ -47,12 +55,6 @@ namespace SimpleConnectionLimiter.socks5
             {
                 // Ignore
             }
-        }
-
-        private void CallOnExitAndStop()
-        {
-            OnClientExit?.Invoke(this);
-            Stop();
         }
 
         private void ConnectionReject(bool notSocks5)
@@ -73,7 +75,7 @@ namespace SimpleConnectionLimiter.socks5
             }
             _clientToBuffer.ConfirmWrite(2);
 
-            Send(2, CallOnExitAndStop);
+            Send(2, Stop);
         }
 
         public void Start()
@@ -85,7 +87,7 @@ namespace SimpleConnectionLimiter.socks5
             catch (Exception)
             {
                 // TODO: log
-                CallOnExitAndStop();
+                Stop();
             }
         }
 
@@ -180,7 +182,7 @@ namespace SimpleConnectionLimiter.socks5
                     break;
                 default:
                     Debug.WriteLine("Unsupported ATYP=" + atyp);
-                    CallOnExitAndStop();
+                    Stop();
                     break;
             }
         }
@@ -218,7 +220,7 @@ namespace SimpleConnectionLimiter.socks5
                     break;
                 default:
                     Debug.WriteLine("Unsupported ATYP=" + atyp);
-                    CallOnExitAndStop();
+                    Stop();
                     return;
             }
 
@@ -231,15 +233,15 @@ namespace SimpleConnectionLimiter.socks5
             {
                 case 1:
                     Debug.WriteLine("CMD=" + cmd);
-                    Reply(0x01, CallOnExitAndStop); // TODO: handle this
+                    Reply(0x01, Stop); // TODO: handle this
                     break;
                 case 3:
                     Debug.WriteLine("Unsupported CMD=" + cmd);
-                    Reply(0x07, CallOnExitAndStop); // 0x07 = Command not supported
+                    Reply(0x07, Stop); // 0x07 = Command not supported
                     break;
                 default:
                     Debug.WriteLine("Unsupported CMD=" + cmd);
-                    Reply(0x07, CallOnExitAndStop);
+                    Reply(0x07, Stop);
                     break;
             }
         }
@@ -272,7 +274,7 @@ namespace SimpleConnectionLimiter.socks5
                 if (!success)
                 {
                     // TODO: log
-                    CallOnExitAndStop();
+                    Stop();
                 }
                 else
                 {
@@ -288,7 +290,7 @@ namespace SimpleConnectionLimiter.socks5
                 if (!success)
                 {
                     // TODO: log
-                    CallOnExitAndStop();
+                    Stop();
                 }
                 else
                 {
