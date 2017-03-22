@@ -274,7 +274,10 @@ namespace SimpleConnectionLimiter.socks5
 
         private void OnRequestSucceededCallback()
         {
-            // TODO: Start pipe
+            // Start pipe
+
+            OnServerWriteReady();
+            OnServerReadReady();
         }
 
         #region Read / Send
@@ -337,6 +340,16 @@ namespace SimpleConnectionLimiter.socks5
             {
                 Reply(reply, Stop);
             }
+        }
+
+        public void OnServerReadReady()
+        {
+            Send(ClientToBuffer.Size, _server.OnClientWriteReady);
+        }
+
+        public void OnServerWriteReady()
+        {
+            ReadAtLeast(1, _server.OnClientReadReady);
         }
 
         #endregion
