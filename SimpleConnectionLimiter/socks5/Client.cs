@@ -40,6 +40,10 @@ namespace SimpleConnectionLimiter.socks5
             Context = ctx;
             Id = ctx.IdCounter++;
             _socket = clientSocket;
+
+            _server = Context.ServerFactory.CreateServer();
+            _server.Client = this;
+            OnClientExit += c => _server.OnStop();
         }
 
         public void Stop()
@@ -85,8 +89,6 @@ namespace SimpleConnectionLimiter.socks5
         {
             try
             {
-                _server = Context.ServerFactory.CreateServer();
-                _server.Client = this;
                 ReadAtLeast(3, AuthMethodRecvCallback);
             }
             catch (Exception)

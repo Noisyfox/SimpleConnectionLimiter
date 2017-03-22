@@ -23,5 +23,9 @@ namespace SimpleConnectionLimiter.impl
         public void OnClientWriteReady()
         {
         }
+
+        public void OnStop()
+        {
+        }
     }
 }

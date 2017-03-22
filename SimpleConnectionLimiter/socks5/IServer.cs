@@ -15,5 +15,7 @@ namespace SimpleConnectionLimiter.socks5
         void OnClientReadReady();
 
         void OnClientWriteReady();
+
+        void OnStop();
     }
 }
