@@ -25,8 +25,11 @@ namespace SimpleConnectionLimiter.socks5
 
         private readonly Socket _socket;
 
-        private readonly PassiveBuffer _clientFromBuffer = new PassiveBuffer(1024);
-        private readonly PassiveBuffer _clientToBuffer = new PassiveBuffer(1024);
+        private IServer _server;
+
+        public PassiveBuffer ClientFromBuffer { get; } = new PassiveBuffer(1024);
+
+        public PassiveBuffer ClientToBuffer { get; } = new PassiveBuffer(1024);
 
 
         private delegate RunStateDelegate RunStateDelegate();
@@ -59,8 +62,8 @@ namespace SimpleConnectionLimiter.socks5
 
         private void ConnectionReject(bool notSocks5)
         {
-            _clientToBuffer.Clear();
-            _clientToBuffer.RequireWrite(2, true, false, out ArraySegment<byte> _buffer);
+            ClientToBuffer.Clear();
+            ClientToBuffer.RequireWrite(2, true, false, out ArraySegment<byte> _buffer);
             var buffer = (IList<byte>) _buffer;
             if (notSocks5)
             {
@@ -73,7 +76,7 @@ namespace SimpleConnectionLimiter.socks5
                 buffer[0] = 0x5;
                 buffer[1] = 0xFF; // NO ACCEPTABLE METHODS
             }
-            _clientToBuffer.ConfirmWrite(2);
+            ClientToBuffer.ConfirmWrite(2);
 
             Send(2, Stop);
         }
@@ -82,6 +85,8 @@ namespace SimpleConnectionLimiter.socks5
         {
             try
             {
+                _server = Context.ServerFactory.CreateServer();
+                _server.Client = this;
                 ReadAtLeast(3, AuthMethodRecvCallback);
             }
             catch (Exception)
@@ -95,7 +100,7 @@ namespace SimpleConnectionLimiter.socks5
         {
             {
                 // Parse client methods
-                _clientFromBuffer.RequireRead(_clientFromBuffer.Size, out ArraySegment<byte> _buffer);
+                ClientFromBuffer.RequireRead(ClientFromBuffer.Size, out ArraySegment<byte> _buffer);
                 var buffer = (IList<byte>) _buffer;
                 if (buffer[0] != 0x5)
                 {
@@ -122,7 +127,7 @@ namespace SimpleConnectionLimiter.socks5
                     }
                 }
 
-                _clientFromBuffer.ConfirmRead(authMethodLen);
+                ClientFromBuffer.ConfirmRead(authMethodLen);
 
                 if (!hasNoAuthRequired)
                 {
@@ -133,14 +138,14 @@ namespace SimpleConnectionLimiter.socks5
 
             {
                 // Select method
-                _clientToBuffer.Clear();
-                _clientToBuffer.RequireWrite(2, true, false, out ArraySegment<byte> _buffer);
+                ClientToBuffer.Clear();
+                ClientToBuffer.RequireWrite(2, true, false, out ArraySegment<byte> _buffer);
                 var buffer = (IList<byte>)_buffer;
                 buffer[0] = 0x5;
                 buffer[1] = 0x0;
-                _clientToBuffer.ConfirmWrite(2);
+                ClientToBuffer.ConfirmWrite(2);
 
-                Send(_clientToBuffer.Size, AuthMethodSendCallback);
+                Send(ClientToBuffer.Size, AuthMethodSendCallback);
             }
         }
 
@@ -162,7 +167,7 @@ namespace SimpleConnectionLimiter.socks5
 
         private void RequestHeadReadCallback()
         {
-            _clientFromBuffer.RequireRead(3 + 2, out ArraySegment<byte> _buffer);
+            ClientFromBuffer.RequireRead(3 + 2, out ArraySegment<byte> _buffer);
             var buffer = (IList<byte>)_buffer;
 
 
@@ -189,7 +194,7 @@ namespace SimpleConnectionLimiter.socks5
 
         private void OnRequestFullyReadCallback()
         {
-            _clientFromBuffer.RequireRead(_clientFromBuffer.Size, out ArraySegment<byte> _buffer);
+            ClientFromBuffer.RequireRead(ClientFromBuffer.Size, out ArraySegment<byte> _buffer);
             var buffer = (IList<byte>)_buffer;
 
             int cmd = buffer[1];
@@ -224,7 +229,7 @@ namespace SimpleConnectionLimiter.socks5
                     return;
             }
 
-            _clientFromBuffer.ConfirmRead(headerLen);
+            ClientFromBuffer.ConfirmRead(headerLen);
 
             Debug.WriteLine($"connect to {dstAddr}:{dstPort}");
 
@@ -233,25 +238,25 @@ namespace SimpleConnectionLimiter.socks5
             {
                 case 1:
                     Debug.WriteLine("CMD=" + cmd);
-                    Reply(0x01, Stop); // TODO: handle this
+                    _server.OnClientRequestConnect(dstAddr, dstPort);
                     break;
                 case 3:
                     Debug.WriteLine("Unsupported CMD=" + cmd);
-                    Reply(0x07, Stop); // 0x07 = Command not supported
+                    Reply(ServerReply.CommandNotSupported, Stop);
                     break;
                 default:
                     Debug.WriteLine("Unsupported CMD=" + cmd);
-                    Reply(0x07, Stop);
+                    Reply(ServerReply.CommandNotSupported, Stop);
                     break;
             }
         }
 
-        private void Reply(byte result, Action callback)
+        private void Reply(ServerReply result, Action callback)
         {
-            _clientToBuffer.RequireWrite(10, true, false, out ArraySegment<byte> _buffer);
+            ClientToBuffer.RequireWrite(10, true, false, out ArraySegment<byte> _buffer);
             var buffer = (IList<byte>)_buffer;
             buffer[0] = 0x5;
-            buffer[1] = result;
+            buffer[1] = (byte) result;
             buffer[2] = 0x0;
             buffer[3] = 0x1;
             buffer[4] = 0x0;
@@ -260,16 +265,21 @@ namespace SimpleConnectionLimiter.socks5
             buffer[7] = 0x0;
             buffer[8] = 0x0;
             buffer[9] = 0x0;
-            _clientToBuffer.ConfirmWrite(10);
+            ClientToBuffer.ConfirmWrite(10);
 
-            Send(_clientToBuffer.Size, callback);
+            Send(ClientToBuffer.Size, callback);
+        }
+
+        private void OnRequestSucceededCallback()
+        {
+            // TODO: Start pipe
         }
 
         #region Read / Send
 
         private void ReadAtLeast(int minDataCount, Action callback)
         {
-            _socket.ReadAtLeast(_clientFromBuffer, minDataCount, (success, exception) =>
+            _socket.ReadAtLeast(ClientFromBuffer, minDataCount, (success, exception) =>
             {
                 if (!success)
                 {
@@ -285,7 +295,7 @@ namespace SimpleConnectionLimiter.socks5
 
         private void Send(int count, Action callback)
         {
-            _socket.Send(_clientToBuffer, count, (success, exception) =>
+            _socket.Send(ClientToBuffer, count, (success, exception) =>
             {
                 if (!success)
                 {
@@ -298,6 +308,35 @@ namespace SimpleConnectionLimiter.socks5
                 }
             });
         }
+        #endregion
+
+        #region Callback for Server
+
+        public enum ServerReply : byte
+        {
+            Succeeded = 0x0,
+            Failure,
+            NotAllowed,
+            NetworkUnreachable,
+            HostUnreachable,
+            ConnectionRefused,
+            TTLExpired,
+            CommandNotSupported,
+            AddressTypeNotSupported
+        }
+
+        public void OnAfterServerConnected(ServerReply reply)
+        {
+            if (reply == ServerReply.Succeeded)
+            {
+                Reply(reply, OnRequestSucceededCallback);
+            }
+            else
+            {
+                Reply(reply, Stop);
+            }
+        }
+
         #endregion
     }
 }

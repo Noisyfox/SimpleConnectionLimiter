@@ -13,11 +13,14 @@ namespace SimpleConnectionLimiter.socks5
 {
     public class ListenerContext
     {
-        internal ListenerContext(Socket socket, int maxConnections)
+        internal ListenerContext(Socket socket, int maxConnections, IServerFactory serverFactory)
         {
             ListenSocket = socket;
             MaxConnections = maxConnections;
+            ServerFactory = serverFactory;
         }
+
+        internal readonly IServerFactory ServerFactory;
 
         internal readonly int MaxConnections;
 
@@ -39,6 +42,8 @@ namespace SimpleConnectionLimiter.socks5
 
         public int MaxConnections { get; set; }
 
+        public IServerFactory ServerFactory { get; set; }
+
         private ListenerContext _currentContext;
 
         public Listener(ushort port)
@@ -59,7 +64,14 @@ namespace SimpleConnectionLimiter.socks5
                 listenSocket.Bind(endPoint);
                 listenSocket.Listen(1024);
 
-                var context = new ListenerContext(listenSocket, MaxConnections);
+                var serverFactory = ServerFactory;
+
+                if (serverFactory == null)
+                {
+                    throw new Exception("ServerFactory must be set before Sstart()!");
+                }
+
+                var context = new ListenerContext(listenSocket, MaxConnections, serverFactory);
 
                 if (Interlocked.CompareExchange(ref _currentContext, context, null) == null)
                 {

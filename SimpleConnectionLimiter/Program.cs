@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using SimpleConnectionLimiter.impl;
 using SimpleConnectionLimiter.socks5;
 
 namespace SimpleConnectionLimiter
@@ -21,7 +22,11 @@ namespace SimpleConnectionLimiter
             // Init notify menu
 
             // Test listener
-            new Listener(5555) {MaxConnections = 1/* for better debugging */}.Start();
+            new Listener(5555)
+            {
+                MaxConnections = 1 /* for better debugging */,
+                ServerFactory = new SimpleServerFactory()
+            }.Start();
 
             Application.Run();
         }
